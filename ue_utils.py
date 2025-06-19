@@ -35,7 +35,7 @@ def asset_import_task(asset_file, mode, destination_path, options):
     # task settings
     task = unreal.AssetImportTask()
     task.automated = True
-    task.destination_path = f"{destination_path}/SKM" if "SKM_" in asset_file else f"{destination_path}/ANIM"
+    task.destination_path = destination_path
     task.filename = asset_file
     task.options = options
     if mode == 'replace':

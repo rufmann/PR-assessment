@@ -1,7 +1,7 @@
 import os
 import sys
 import unreal
-from unreal import Paths
+from unreal import Paths, EditorAssetLibrary
 from importlib import reload
 from functools import partial
 
@@ -227,9 +227,13 @@ class UEAssetImporter(QWidget):
                 self.destination_path_line_edit.setCursorPosition(0)
 
     def remove_assets(self):
-        selected_assets = self.asset_list_widget.selectedItems()
-        for asset in selected_assets:
-            self.asset_list_widget.takeItem(self.asset_list_widget.row(asset))
+        print("removing assets")
+        selected_rows = set()
+        for item in self.asset_list_widget.selectedItems():
+            selected_rows.add(item.row())
+        
+        for row in sorted(selected_rows, reverse=True):
+            self.asset_list_widget.removeRow(row)
 
     def do_validate_skm(self):
         unreal.log("Validating Skeletons")
@@ -283,6 +287,7 @@ class UEAssetImporter(QWidget):
                     tasks.append(task)
         # import or reimport skm assets
         if existing_assets:
+            unreal.log("Existing skeletons found")
             dialog = ExistingAssetsDialog(existing_assets)
             if dialog.exec() == QDialog.Accepted:
                 mode = dialog.result
@@ -316,8 +321,9 @@ class UEAssetImporter(QWidget):
             if dialog.exec() == QDialog.Accepted:
                 skeleton = unreal.load_object(None, dialog.selected_skeleton)
                 anim_list = [anim for anim in self.get_all_listed_assets() if 'ANIM_' in anim]
+                cb_anim_assets = [unreal.load_object(None, anim).get_name() for anim in cb_assets if 'ANIM' in anim]
                 for asset in anim_list:
-                    if os.path.basename(asset).strip('.fbx') in set([os.path.basename(anim).split('.')[0].rsplit('_', 1)[0] for anim in cb_assets if 'ANIM' in anim]):
+                    if os.path.basename(asset).strip('.fbx') in cb_anim_assets:
                         existing_assets.append(asset)
                     else:
                         # import new anim seq assets
@@ -327,6 +333,7 @@ class UEAssetImporter(QWidget):
 
                 # import or reimport anim seq assets
                 if existing_assets:
+                    unreal.log("Existing animations found")
                     dialog = ExistingAssetsDialog(existing_assets)
                     if dialog.exec() == QDialog.Accepted:
                         mode = dialog.result
@@ -372,16 +379,21 @@ class UEAssetImporter(QWidget):
         """
         Post-processes can be added here like renaming, asset validation, etc.
         """
-        # just renaming assets with proper prefixes
-        # scan all assets
-        # for each asset, get asset class
-        # SkeletalMesh, SKM_
-        # Skeletons, SKL_
-        # PhysicsAssets, PA_
-        # Materials, M_
+        asset_prefix_map = {'SkeletalMesh': 'SKM', 'Skeleton': 'SKL', 'PhysicsAsset': 'PA', 'Material': 'M', 'AnimSequence': 'ANIM'}
         cb_assets = ue_utils.get_all_assets(self.GAME_ROOT)
-
-        pass
+        for asset in cb_assets:
+            asset_obj = unreal.load_object(None, asset)
+            asset_class_name = asset_obj.get_class().get_name()
+            if asset_class_name in asset_prefix_map:
+                current_name = asset_obj.get_name()
+                if '_' in current_name:
+                    new_name = current_name.replace(current_name.split('_')[0], asset_prefix_map[asset_class_name])
+                else:
+                    new_name = f"{asset_prefix_map[asset_class_name]}_{current_name}"
+                parent_path = os.path.dirname(asset_obj.get_path_name())
+                
+                unreal.log(f"Renaming {current_name} to {new_name}")
+                EditorAssetLibrary.rename_asset(os.path.join(parent_path, current_name), os.path.join(parent_path, new_name))
 
     def do_imports(self):
         if not self.get_all_listed_assets():
@@ -398,11 +410,9 @@ class UEAssetImporter(QWidget):
             else:
                 message = QMessageBox.critical(self, "Import Path Error", "No import path detected.\nPlease enter import path.", QMessageBox.Ok)
 
-if __name__ == "__main__":
+def launch_app():
     reload(ue_utils)
     app = QApplication.instance() or QApplication(sys.argv)
     widget = UEAssetImporter()
     widget.show()
-
-    app.processEvents()
-    # sys.exit(app.exec())
+    return widget
